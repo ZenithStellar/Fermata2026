@@ -22,41 +22,44 @@ jobs:
 
       - name: Modify Package Name and Version
         run: |
-          # 1. Setup gradle.properties
+          # 1. Setup gradle.properties (Memory + AndroidX)
           echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" > gradle.properties
           echo "android.useAndroidX=true" >> gradle.properties
           echo "android.enableJetifier=true" >> gradle.properties
           echo "VERSION_CODE=201" >> gradle.properties
           echo "VERSION_NAME=2.0.1" >> gradle.properties
           
-          # 2. Update Package Name to fermamode.v2026
-          sed -i 's/applicationId .*/applicationId "fermamode.v20260202"/' fermata/build.gradle
+          # 2. Update Package Name to fermamode.v2026 (Valid for Android)
+          sed -i 's/applicationId .*/applicationId "fermamode.v2026121"/' fermata/build.gradle
           sed -i '/applicationIdSuffix/d' fermata/build.gradle
           
-          # 3. Force Version Name and Code
+          # 3. Force Version
           sed -i 's/versionCode .*/versionCode 201/' fermata/build.gradle
-          sed -i 's/versionName .*/versionName "2.0.1"/' fermata/build.gradle
+          sed -i 's/versionName .*/versionName "2.0.2"/' fermata/build.gradle
 
-      - name: Nuclear Manifest & Descriptor Cleanup
+      - name: Precise XML Cleanup (Bypass Google Conflicts)
         run: |
-          # A. Delete every line in ANY manifest that mentions MediaBrowserService
-          # This kills the "Media App" identity completely.
-          find . -name "AndroidManifest.xml" -exec sed -i '/android.media.browse.MediaBrowserService/d' {} +
+          # This Perl script reads the whole file as one string and deletes the ENTIRE tag block.
+          # This prevents "Missing attribute" errors.
           
-          # B. Delete the "audio" metadata tag
-          # This is the second trigger for the conflict error.
-          find . -name "AndroidManifest.xml" -exec sed -i '/com.google.android.gms.car.application.audio/d' {} +
-          
-          # C. Remove Automotive hardware/metadata
-          find . -name "AndroidManifest.xml" -exec sed -i '/android.hardware.type.automotive/d' {} +
-          find . -name "AndroidManifest.xml" -exec sed -i '/com.android.automotive/d' {} +
-          
-          # D. CLEAN THE APP DESCRIPTOR (Crucial Step)
-          # Google checks res/xml/automotive_app_desc.xml. 
-          # We must remove the <uses name="media"/> line from it.
+          find . -name "AndroidManifest.xml" -exec perl -0777 -i -pe '
+            # A. Remove the entire <uses-feature> block for automotive (Hardware conflict)
+            s/<uses-feature[^>]*?android:name="android\.hardware\.type\.automotive"[^>]*?\/>//gs;
+            
+            # B. Remove the entire <meta-data> block for automotive (Metadata conflict)
+            s/<meta-data[^>]*?android:name="com\.android\.automotive"[^>]*?\/>//gs;
+            
+            # C. Remove the entire <service> block that uses MediaBrowserService (Conflict with YouTube/CarAppService)
+            s/<service[^>]*?>.*?android\.media\.browse\.MediaBrowserService.*?<\/service>//gs;
+            
+            # D. Remove the audio metadata tag (Stops Google from thinking its a music app)
+            s/<meta-data[^>]*?android:value="audio"[^>]*?\/>//gs;
+          ' {} +
+
+          # Clean the app descriptor file so Google Play doesn't see "media" usage
           find . -name "automotive_app_desc.xml" -exec sed -i '/media/d' {} +
 
-      - name: Generate Signing Key (Keystore)
+      - name: Generate Signing Key
         run: |
           keytool -genkey -v -keystore release.keystore \
           -alias fermatakey \
@@ -73,9 +76,7 @@ jobs:
       - name: Clean and Sign AAB
         run: |
           AAB_PATH=$(find fermata/build/outputs/bundle/autoRelease -name "*.aab")
-          # Strip existing signatures
           zip -d $AAB_PATH "META-INF/*" || true
-          # Sign
           jarsigner -keystore release.keystore \
           -storepass "password123" -keypass "password123" \
           $AAB_PATH fermatakey
@@ -86,7 +87,7 @@ jobs:
           name: fermata-signed-aab
           path: fermata/build/outputs/bundle/autoRelease/*.aab
 
-      - name: Upload the Keystore
+      - name: Upload Keystore
         uses: actions/upload-artifact@v4
         with:
           name: my-signing-key
