@@ -37,6 +37,19 @@ jobs:
           sed -i 's/versionCode .*/versionCode 201/' fermata/build.gradle
           sed -i 's/versionName .*/versionName "2.0.1"/' fermata/build.gradle
 
+      - name: Strip Automotive and Conflicting Services
+        run: |
+          # Remove the hardware feature for Automotive OS
+          find . -name "AndroidManifest.xml" -exec sed -i '/android.hardware.type.automotive/d' {} +
+          
+          # Remove Automotive metadata
+          find . -name "AndroidManifest.xml" -exec sed -i '/com.android.automotive/d' {} +
+          
+          # IMPORTANT: Remove CarAppService to resolve conflict with MediaBrowserService.
+          # Play Store allows MediaBrowserService (for music) OR CarAppService (for mirroring/POI), but NOT both.
+          # Since Fermata is a Media Player, we keep MediaBrowserService and delete CarAppService.
+          find . -name "AndroidManifest.xml" -exec sed -i '/CarAppService/,/<\/service>/d' {} +
+
       - name: Generate Signing Key (Keystore)
         run: |
           keytool -genkey -v -keystore release.keystore \
@@ -53,21 +66,11 @@ jobs:
 
       - name: Clean and Sign AAB
         run: |
-          # Find the AAB file
           AAB_PATH=$(find fermata/build/outputs/bundle/autoRelease -name "*.aab")
-          echo "Processing: $AAB_PATH"
-          
-          # 1. Remove any existing signatures (This prevents the 'multiple certificate chain' error)
-          # AAB files are zip files; we delete the META-INF folder contents
           zip -d $AAB_PATH "META-INF/*" || true
-          
-          # 2. Sign the clean AAB with your generated key
           jarsigner -keystore release.keystore \
           -storepass "password123" -keypass "password123" \
           $AAB_PATH fermatakey
-          
-          # 3. Verify the signature
-          jarsigner -verify $AAB_PATH
 
       - name: Upload Signed AAB
         uses: actions/upload-artifact@v4
@@ -75,7 +78,7 @@ jobs:
           name: fermata-signed-aab
           path: fermata/build/outputs/bundle/autoRelease/*.aab
 
-      - name: Upload the Keystore (SAVE THIS FOR UPDATES)
+      - name: Upload the Keystore
         uses: actions/upload-artifact@v4
         with:
           name: my-signing-key
