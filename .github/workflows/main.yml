@@ -22,18 +22,19 @@ jobs:
 
       - name: Modify Package Name and Version
         run: |
-          # 1. Create a gradle.properties file to satisfy the script variables
-          echo "VERSION_CODE=201" > gradle.properties
+          # 1. Setup gradle.properties with mandatory AndroidX flags
+          echo "android.useAndroidX=true" > gradle.properties
+          echo "android.enableJetifier=true" >> gradle.properties
+          echo "VERSION_CODE=201" >> gradle.properties
           echo "VERSION_NAME=2.0.1" >> gradle.properties
           
-          # 2. Force hardcoded values in fermata/build.gradle
-          # This replaces the logic that uses variables with your specific values
+          # 2. Force the Package Name (Application ID)
+          # We use a more aggressive sed to ensure it overrides the dynamic ID logic
+          sed -i 's/applicationId .*/applicationId "fermamode.2026"/' fermata/build.gradle
+          
+          # 3. Force Version Name and Code in the build file
           sed -i 's/versionCode .*/versionCode 201/' fermata/build.gradle
           sed -i 's/versionName .*/versionName "2.0.1"/' fermata/build.gradle
-          
-          # 3. Force the Package Name (Application ID)
-          # Fermata usually builds the ID dynamically, this overrides it entirely
-          sed -i 's/applicationId .*/applicationId "fermamode.2026"/' fermata/build.gradle
 
       - name: Generate Signing Key (Keystore)
         run: |
@@ -46,12 +47,14 @@ jobs:
       - name: Build Android Auto Bundle (AAB)
         run: ./gradlew :fermata:bundleAutoRelease
         env:
+          # This flag tells Fermata to skip Google Play Services dependency if needed
           NO_GS: true 
 
       - name: Sign AAB with generated key
         run: |
-          # Find the AAB file location
+          # Find the AAB file (the path can vary slightly based on flavor)
           AAB_PATH=$(find fermata/build/outputs/bundle/autoRelease -name "*.aab")
+          echo "Signing: $AAB_PATH"
           # Sign it
           jarsigner -keystore release.keystore \
           -storepass "password123" -keypass "password123" \
