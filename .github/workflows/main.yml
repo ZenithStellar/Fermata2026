@@ -22,41 +22,41 @@ jobs:
 
       - name: Modify Package Name and Version
         run: |
-          # 1. Setup gradle.properties (Memory + AndroidX)
+          # 1. Setup gradle.properties
           echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" > gradle.properties
           echo "android.useAndroidX=true" >> gradle.properties
           echo "android.enableJetifier=true" >> gradle.properties
           echo "VERSION_CODE=201" >> gradle.properties
           echo "VERSION_NAME=2.0.1" >> gradle.properties
           
-          # 2. Update Package Name to fermamode.v2026 (Valid for Android)
-          sed -i 's/applicationId .*/applicationId "fermamode.v2026121"/' fermata/build.gradle
+          # 2. Update Package Name
+          sed -i 's/applicationId .*/applicationId "fermamode.v2026"/' fermata/build.gradle
           sed -i '/applicationIdSuffix/d' fermata/build.gradle
           
           # 3. Force Version
           sed -i 's/versionCode .*/versionCode 201/' fermata/build.gradle
-          sed -i 's/versionName .*/versionName "2.0.2"/' fermata/build.gradle
+          sed -i 's/versionName .*/versionName "2.0.1"/' fermata/build.gradle
 
-      - name: Precise XML Cleanup (Bypass Google Conflicts)
+      - name: Surgical Manifest Cleanup (Fix Crash + Fix Play Store Conflict)
         run: |
-          # This Perl script reads the whole file as one string and deletes the ENTIRE tag block.
-          # This prevents "Missing attribute" errors.
-          
           find . -name "AndroidManifest.xml" -exec perl -0777 -i -pe '
-            # A. Remove the entire <uses-feature> block for automotive (Hardware conflict)
+            # A. Fix the crash: Remove the MlKitInitProvider that caused your error
+            s/<provider[^>]*?com\.google\.mlkit\.common\.internal\.MlKitInitProvider[^>]*?\/>//gs;
+            
+            # B. Remove Automotive Hardware Feature (Play Store Requirement)
             s/<uses-feature[^>]*?android:name="android\.hardware\.type\.automotive"[^>]*?\/>//gs;
             
-            # B. Remove the entire <meta-data> block for automotive (Metadata conflict)
+            # C. Remove Automotive Metadata
             s/<meta-data[^>]*?android:name="com\.android\.automotive"[^>]*?\/>//gs;
             
-            # C. Remove the entire <service> block that uses MediaBrowserService (Conflict with YouTube/CarAppService)
+            # D. Remove MediaBrowserService (Fixes the Service Conflict Error)
             s/<service[^>]*?>.*?android\.media\.browse\.MediaBrowserService.*?<\/service>//gs;
             
-            # D. Remove the audio metadata tag (Stops Google from thinking its a music app)
+            # E. Remove Audio Metadata
             s/<meta-data[^>]*?android:value="audio"[^>]*?\/>//gs;
           ' {} +
 
-          # Clean the app descriptor file so Google Play doesn't see "media" usage
+          # Clean the app descriptor
           find . -name "automotive_app_desc.xml" -exec sed -i '/media/d' {} +
 
       - name: Generate Signing Key
@@ -68,9 +68,9 @@ jobs:
           -dname "CN=Fermata, OU=Android, O=Fermata, L=World, S=World, C=US"
 
       - name: Build Android Auto Bundle (AAB)
+        # REMOVED NO_GS: true to prevent ClassNotFoundException
         run: ./gradlew :fermata:bundleAutoRelease --no-daemon
         env:
-          NO_GS: true 
           _JAVA_OPTIONS: "-Xmx4096m"
 
       - name: Clean and Sign AAB
