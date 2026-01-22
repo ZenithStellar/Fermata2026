@@ -1,0 +1,47 @@
+name: Generate AAB for Play Store
+
+on:
+  workflow_dispatch: # Allows you to start the build with a button
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Change Package ID & App Name
+        # Play Store requires a unique ID. This replaces the default one with a unique one.
+        run: |
+          UNIQUE_ID="com.my$(date +%s).fermata.auto"
+          find . -name "build.gradle" -exec sed -i "s/applicationId \"me.aap.fermata.auto\"/applicationId \"$UNIQUE_ID\"/g" {} +
+          echo "NEW_ID=$UNIQUE_ID" >> $GITHUB_ENV
+          echo "Your unique Package ID is: $UNIQUE_ID"
+
+      - name: Generate Keystore
+        # This creates the required signing key automatically inside the runner
+        run: |
+          keytool -genkey -v -keystore release.keystore -alias fermata_alias -keyalg RSA -keysize 2048 -validity 10000 -storepass password123 -keypass password123 -dname "CN=Fermata, OU=Auto, O=Builder, L=World, S=World, C=US"
+
+      - name: Build AAB
+        run: ./gradlew bundleAutoRelease
+
+      - name: Sign AAB
+        # This signs the bundle so Google Play Console accepts it
+        run: |
+          sudo apt-get install -y openjdk-17-jdk-headless
+          jarsigner -keystore release.keystore -storepass password123 -keypass password123 app/build/outputs/bundle/autoRelease/app-auto-release.aab fermata_alias
+
+      - name: Upload Finished AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: Fermata-PlayStore-Ready
+          path: app/build/outputs/bundle/autoRelease/app-auto-release.aab
