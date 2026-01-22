@@ -22,17 +22,17 @@ jobs:
 
       - name: Modify Package Name and Version
         run: |
-          # 1. Setup gradle.properties with mandatory AndroidX flags
-          echo "android.useAndroidX=true" > gradle.properties
+          # 1. Setup gradle.properties with memory increase and AndroidX flags
+          echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" > gradle.properties
+          echo "android.useAndroidX=true" >> gradle.properties
           echo "android.enableJetifier=true" >> gradle.properties
           echo "VERSION_CODE=201" >> gradle.properties
           echo "VERSION_NAME=2.0.1" >> gradle.properties
           
           # 2. Force the Package Name (Application ID)
-          # We use a more aggressive sed to ensure it overrides the dynamic ID logic
           sed -i 's/applicationId .*/applicationId "fermamode.2026"/' fermata/build.gradle
           
-          # 3. Force Version Name and Code in the build file
+          # 3. Force Version Name and Code
           sed -i 's/versionCode .*/versionCode 201/' fermata/build.gradle
           sed -i 's/versionName .*/versionName "2.0.1"/' fermata/build.gradle
 
@@ -45,17 +45,17 @@ jobs:
           -dname "CN=Fermata, OU=Android, O=Fermata, L=World, S=World, C=US"
 
       - name: Build Android Auto Bundle (AAB)
-        run: ./gradlew :fermata:bundleAutoRelease
+        # We add --no-daemon to ensure memory is fresh and avoid leaks
+        run: ./gradlew :fermata:bundleAutoRelease --no-daemon
         env:
-          # This flag tells Fermata to skip Google Play Services dependency if needed
-          NO_GS: true 
+          NO_GS: true
+          # Additional memory environment variable for the compiler
+          _JAVA_OPTIONS: "-Xmx4096m"
 
       - name: Sign AAB with generated key
         run: |
-          # Find the AAB file (the path can vary slightly based on flavor)
           AAB_PATH=$(find fermata/build/outputs/bundle/autoRelease -name "*.aab")
           echo "Signing: $AAB_PATH"
-          # Sign it
           jarsigner -keystore release.keystore \
           -storepass "password123" -keypass "password123" \
           $AAB_PATH fermatakey
