@@ -22,7 +22,7 @@ jobs:
 
       - name: Modify Package Name and Version
         run: |
-          # 1. Setup gradle.properties (Memory + AndroidX)
+          # 1. Setup gradle.properties
           echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" > gradle.properties
           echo "android.useAndroidX=true" >> gradle.properties
           echo "android.enableJetifier=true" >> gradle.properties
@@ -37,24 +37,25 @@ jobs:
           sed -i 's/versionCode .*/versionCode 201/' fermata/build.gradle
           sed -i 's/versionName .*/versionName "2.0.1"/' fermata/build.gradle
 
-      - name: Strip Automotive and Fix Service Conflicts
+      - name: Surgical Manifest Cleanup
         run: |
-          # A. Completely remove Automotive hardware/metadata declarations
-          # This fixes the "cannot declare automotive and car.application at same time" error
-          find . -name "AndroidManifest.xml" -exec sed -i '/android.hardware.type.automotive/d' {} +
-          find . -name "AndroidManifest.xml" -exec sed -i '/com.android.automotive/d' {} +
+          # Target the specific manifest causing the failure
+          MANIFEST="fermata/src/auto/AndroidManifest.xml"
           
-          # B. REMOVE MediaBrowserService (The Audio Player tag)
-          # This allows the CarAppService (YouTube/Browser) to be the primary service
-          find . -name "AndroidManifest.xml" -exec sed -i '/android.media.browse.MediaBrowserService/d' {} +
+          # A. Remove the Automotive hardware feature tag entirely
+          # This regex finds the <uses-feature ... automotive ... /> block even if it's multi-line
+          perl -0777 -i -pe 's/<uses-feature[^>]+?android\.hardware\.type\.automotive[^>]+?\/>//gs' $MANIFEST
           
-          # C. REMOVE the "audio" metadata tag
-          # This stops Google from thinking it's a music app and allows CarAppService to pass
-          find . -name "AndroidManifest.xml" -exec sed -i '/com.google.android.gms.car.application.audio/d' {} +
+          # B. Remove the Automotive metadata
+          perl -0777 -i -pe 's/<meta-data[^>]+?com\.android\.automotive[^>]+?\/>//gs' $MANIFEST
           
-          # D. Ensure "template" (CarAppService) is the only car metadata left
-          # This ensures YouTube and Browser logic stay enabled
-          echo "Manifest cleanup complete."
+          # C. Remove the MediaBrowserService (The conflicting Audio tag)
+          # We remove the <action> tag for MediaBrowserService to stop the conflict 
+          # but keep the <service> tag intact to prevent Java compilation errors.
+          sed -i '/android.media.browse.MediaBrowserService/d' $MANIFEST
+          
+          # D. Remove the "audio" metadata tag that triggers Google's music app checks
+          perl -0777 -i -pe 's/<meta-data[^>]+?com\.google\.android\.gms\.car\.application\.audio[^>]+?\/>//gs' $MANIFEST
 
       - name: Generate Signing Key (Keystore)
         run: |
@@ -73,9 +74,7 @@ jobs:
       - name: Clean and Sign AAB
         run: |
           AAB_PATH=$(find fermata/build/outputs/bundle/autoRelease -name "*.aab")
-          # Strip any existing signatures
           zip -d $AAB_PATH "META-INF/*" || true
-          # Sign with the generated key
           jarsigner -keystore release.keystore \
           -storepass "password123" -keypass "password123" \
           $AAB_PATH fermatakey
@@ -86,7 +85,7 @@ jobs:
           name: fermata-signed-aab
           path: fermata/build/outputs/bundle/autoRelease/*.aab
 
-      - name: Upload the Keystore (SAVE THIS)
+      - name: Upload the Keystore
         uses: actions/upload-artifact@v4
         with:
           name: my-signing-key
