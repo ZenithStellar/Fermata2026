@@ -35,21 +35,24 @@ jobs:
             -keypass "password123" \
             -dname "CN=Fermamode, OU=ID, O=Fermamode, L=World, S=World, C=US"
 
-      - name: Remove Auto Suffix Logic
-        # This removes the code that forces the .auto suffix
+      - name: Force Exact Package Name (Hard Reset)
+        # This deletes any line containing applicationIdSuffix to stop .auto from being added
         run: |
-          sed -i 's/applicationIdSuffix ".auto"//g' fermata/build.gradle
+          sed -i '/applicationIdSuffix/d' fermata/build.gradle
+          # Double check the package name is set correctly
+          echo "Overriding Application ID in gradle.properties..."
+          echo "APP_ID=fermamode.v2026" >> gradle.properties
 
       - name: Grant Execute Permission
         run: chmod +x gradlew
 
       - name: Build Universal Release APK
-        # We pass the exact ID you want here
+        # We pass the ID again here as a backup
         run: ./gradlew fermata:assembleAutoRelease -PAPP_ID=fermamode.v2026
 
       - name: Align and Sign APK
         run: |
-          # 1. Find the unsigned APK
+          # 1. Find the APK (it should now be named fermamode.v2026 internally)
           UNSIGNED_APK=$(find fermata/build/outputs/apk/auto/release -name "*.apk" | head -n 1)
           
           # 2. Zipalign
@@ -63,6 +66,9 @@ jobs:
             --key-pass pass:password123 \
             --out fermamode.v2026.apk \
             fermamode_aligned.apk
+            
+          # 4. Final verification of the Package Name inside the APK
+          $ANDROID_HOME/build-tools/34.0.0/aapt dump badging fermamode.v2026.apk | grep package
 
       - name: Upload Finished APK
         uses: actions/upload-artifact@v4
