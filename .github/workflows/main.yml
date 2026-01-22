@@ -22,40 +22,40 @@ jobs:
 
       - name: Modify Package Name and Version
         run: |
-          # 1. Setup gradle.properties
+          # 1. Setup gradle.properties (Memory + AndroidX)
           echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" > gradle.properties
           echo "android.useAndroidX=true" >> gradle.properties
           echo "android.enableJetifier=true" >> gradle.properties
           echo "VERSION_CODE=201" >> gradle.properties
           echo "VERSION_NAME=2.0.1" >> gradle.properties
           
-          # 2. Force the Package Name (Application ID)
-          sed -i 's/applicationId .*/applicationId "fermamode.v20260120"/' fermata/build.gradle
+          # 2. Update Package Name (Segments cannot start with numbers)
+          sed -i 's/applicationId .*/applicationId "fermamode.v20260121"/' fermata/build.gradle
           sed -i '/applicationIdSuffix/d' fermata/build.gradle
           
           # 3. Force Version Name and Code
           sed -i 's/versionCode .*/versionCode 201/' fermata/build.gradle
           sed -i 's/versionName .*/versionName "2.0.1"/' fermata/build.gradle
 
-      - name: Surgical Manifest Cleanup
+      - name: Surgical Manifest Cleanup (Bypass Play Console Conflicts)
         run: |
-          # Target the specific manifest causing the failure
-          MANIFEST="fermata/src/auto/AndroidManifest.xml"
+          # Use Perl to clean all manifests in the project
+          # This removes the entire XML tag blocks to prevent "Missing attribute" errors
           
-          # A. Remove the Automotive hardware feature tag entirely
-          # This regex finds the <uses-feature ... automotive ... /> block even if it's multi-line
-          perl -0777 -i -pe 's/<uses-feature[^>]+?android\.hardware\.type\.automotive[^>]+?\/>//gs' $MANIFEST
-          
-          # B. Remove the Automotive metadata
-          perl -0777 -i -pe 's/<meta-data[^>]+?com\.android\.automotive[^>]+?\/>//gs' $MANIFEST
-          
-          # C. Remove the MediaBrowserService (The conflicting Audio tag)
-          # We remove the <action> tag for MediaBrowserService to stop the conflict 
-          # but keep the <service> tag intact to prevent Java compilation errors.
-          sed -i '/android.media.browse.MediaBrowserService/d' $MANIFEST
-          
-          # D. Remove the "audio" metadata tag that triggers Google's music app checks
-          perl -0777 -i -pe 's/<meta-data[^>]+?com\.google\.android\.gms\.car\.application\.audio[^>]+?\/>//gs' $MANIFEST
+          find . -name "AndroidManifest.xml" -exec perl -0777 -i -pe '
+            # 1. Remove Automotive Hardware Feature
+            s/<uses-feature[^>]+?android\.hardware\.type\.automotive[^>]+?\/>//gs;
+            
+            # 2. Remove Automotive Metadata
+            s/<meta-data[^>]+?com\.android\.automotive[^>]+?\/>//gs;
+            
+            # 3. Remove MediaBrowserService Service Block
+            # This is the key to fixing the Play Console Service conflict
+            s/<service[^>]+?android\.media\.browse\.MediaBrowserService.+?<\/service>//gs;
+            
+            # 4. Remove the Audio Category Metadata
+            s/<meta-data[^>]+?com\.google\.android\.gms\.car\.application\.audio[^>]+?\/>//gs;
+          ' {} +
 
       - name: Generate Signing Key (Keystore)
         run: |
@@ -74,7 +74,9 @@ jobs:
       - name: Clean and Sign AAB
         run: |
           AAB_PATH=$(find fermata/build/outputs/bundle/autoRelease -name "*.aab")
+          # Strip any existing signatures
           zip -d $AAB_PATH "META-INF/*" || true
+          # Sign with the generated key
           jarsigner -keystore release.keystore \
           -storepass "password123" -keypass "password123" \
           $AAB_PATH fermatakey
