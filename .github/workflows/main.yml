@@ -22,12 +22,18 @@ jobs:
 
       - name: Modify Package Name and Version
         run: |
-          # Change Package Name
-          sed -i 's/applicationId ".*"/applicationId "fermamode.2026"/' fermata/build.gradle
+          # 1. Create a gradle.properties file to satisfy the script variables
+          echo "VERSION_CODE=201" > gradle.properties
+          echo "VERSION_NAME=2.0.1" >> gradle.properties
           
-          # Change Version
-          sed -i 's/versionName ".*"/versionName "2.0.1"/' fermata/build.gradle
-          sed -i 's/versionCode [0-9]*/versionCode 201/' fermata/build.gradle
+          # 2. Force hardcoded values in fermata/build.gradle
+          # This replaces the logic that uses variables with your specific values
+          sed -i 's/versionCode .*/versionCode 201/' fermata/build.gradle
+          sed -i 's/versionName .*/versionName "2.0.1"/' fermata/build.gradle
+          
+          # 3. Force the Package Name (Application ID)
+          # Fermata usually builds the ID dynamically, this overrides it entirely
+          sed -i 's/applicationId .*/applicationId "fermamode.2026"/' fermata/build.gradle
 
       - name: Generate Signing Key (Keystore)
         run: |
@@ -37,16 +43,16 @@ jobs:
           -storepass "password123" -keypass "password123" \
           -dname "CN=Fermata, OU=Android, O=Fermata, L=World, S=World, C=US"
 
-      - name: Build Unsigned AAB
+      - name: Build Android Auto Bundle (AAB)
         run: ./gradlew :fermata:bundleAutoRelease
         env:
           NO_GS: true 
 
       - name: Sign AAB with generated key
         run: |
-          # Find the AAB file
+          # Find the AAB file location
           AAB_PATH=$(find fermata/build/outputs/bundle/autoRelease -name "*.aab")
-          # Sign it using jarsigner
+          # Sign it
           jarsigner -keystore release.keystore \
           -storepass "password123" -keypass "password123" \
           $AAB_PATH fermatakey
@@ -57,7 +63,7 @@ jobs:
           name: fermata-signed-aab
           path: fermata/build/outputs/bundle/autoRelease/*.aab
 
-      - name: Upload the Keystore (SAVE THIS FILE)
+      - name: Upload the Keystore (SAVE THIS FOR UPDATES)
         uses: actions/upload-artifact@v4
         with:
           name: my-signing-key
