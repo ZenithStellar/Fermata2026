@@ -22,17 +22,21 @@ jobs:
 
       - name: Modify Package Name and Version
         run: |
-          # 1. Setup gradle.properties with memory increase and AndroidX flags
+          # 1. Setup gradle.properties
           echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" > gradle.properties
           echo "android.useAndroidX=true" >> gradle.properties
           echo "android.enableJetifier=true" >> gradle.properties
           echo "VERSION_CODE=201" >> gradle.properties
           echo "VERSION_NAME=2.0.1" >> gradle.properties
           
-          # 2. Force the Package Name (Application ID)
-          sed -i 's/applicationId .*/applicationId "fermamode.2026"/' fermata/build.gradle
+          # 2. Update Package Name to a VALID one (Segments cannot start with numbers)
+          # We use "fermamode.v2026" instead of "fermamode.2026"
+          sed -i 's/applicationId .*/applicationId "fermamode.v2026"/' fermata/build.gradle
           
-          # 3. Force Version Name and Code
+          # 3. Remove applicationIdSuffix to prevent ".auto" being added to the end
+          sed -i '/applicationIdSuffix/d' fermata/build.gradle
+          
+          # 4. Force Version Name and Code
           sed -i 's/versionCode .*/versionCode 201/' fermata/build.gradle
           sed -i 's/versionName .*/versionName "2.0.1"/' fermata/build.gradle
 
@@ -45,11 +49,9 @@ jobs:
           -dname "CN=Fermata, OU=Android, O=Fermata, L=World, S=World, C=US"
 
       - name: Build Android Auto Bundle (AAB)
-        # We add --no-daemon to ensure memory is fresh and avoid leaks
         run: ./gradlew :fermata:bundleAutoRelease --no-daemon
         env:
           NO_GS: true
-          # Additional memory environment variable for the compiler
           _JAVA_OPTIONS: "-Xmx4096m"
 
       - name: Sign AAB with generated key
