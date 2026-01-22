@@ -30,7 +30,7 @@ jobs:
           echo "VERSION_NAME=2.0.1" >> gradle.properties
           
           # 2. Force the Package Name (Application ID)
-          sed -i 's/applicationId .*/applicationId "fermamode.v2026"/' fermata/build.gradle
+          sed -i 's/applicationId .*/applicationId "fermamode.v20260120"/' fermata/build.gradle
           sed -i '/applicationIdSuffix/d' fermata/build.gradle
           
           # 3. Force Version Name and Code
