@@ -29,14 +29,11 @@ jobs:
           echo "VERSION_CODE=201" >> gradle.properties
           echo "VERSION_NAME=2.0.1" >> gradle.properties
           
-          # 2. Update Package Name to a VALID one (Segments cannot start with numbers)
-          # We use "fermamode.v2026" instead of "fermamode.2026"
+          # 2. Update Package Name (Valid segments only)
           sed -i 's/applicationId .*/applicationId "fermamode.v2026"/' fermata/build.gradle
-          
-          # 3. Remove applicationIdSuffix to prevent ".auto" being added to the end
           sed -i '/applicationIdSuffix/d' fermata/build.gradle
           
-          # 4. Force Version Name and Code
+          # 3. Force Version Name and Code
           sed -i 's/versionCode .*/versionCode 201/' fermata/build.gradle
           sed -i 's/versionName .*/versionName "2.0.1"/' fermata/build.gradle
 
@@ -54,13 +51,23 @@ jobs:
           NO_GS: true
           _JAVA_OPTIONS: "-Xmx4096m"
 
-      - name: Sign AAB with generated key
+      - name: Clean and Sign AAB
         run: |
+          # Find the AAB file
           AAB_PATH=$(find fermata/build/outputs/bundle/autoRelease -name "*.aab")
-          echo "Signing: $AAB_PATH"
+          echo "Processing: $AAB_PATH"
+          
+          # 1. Remove any existing signatures (This prevents the 'multiple certificate chain' error)
+          # AAB files are zip files; we delete the META-INF folder contents
+          zip -d $AAB_PATH "META-INF/*" || true
+          
+          # 2. Sign the clean AAB with your generated key
           jarsigner -keystore release.keystore \
           -storepass "password123" -keypass "password123" \
           $AAB_PATH fermatakey
+          
+          # 3. Verify the signature
+          jarsigner -verify $AAB_PATH
 
       - name: Upload Signed AAB
         uses: actions/upload-artifact@v4
