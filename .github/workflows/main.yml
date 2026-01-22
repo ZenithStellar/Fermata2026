@@ -22,33 +22,34 @@ jobs:
 
       - name: Modify Package Name and Version
         run: |
-          # 1. Setup gradle.properties
+          # 1. Setup gradle.properties (Memory + AndroidX)
           echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" > gradle.properties
           echo "android.useAndroidX=true" >> gradle.properties
           echo "android.enableJetifier=true" >> gradle.properties
           echo "VERSION_CODE=201" >> gradle.properties
           echo "VERSION_NAME=2.0.1" >> gradle.properties
           
-          # 2. Update Package Name (Valid segments only)
-          sed -i 's/applicationId .*/applicationId "fermamode.v2026"/' fermata/build.gradle
+          # 2. Update Package Name
+          sed -i 's/applicationId .*/applicationId "fermamode.v202612"/' fermata/build.gradle
           sed -i '/applicationIdSuffix/d' fermata/build.gradle
           
-          # 3. Force Version Name and Code
+          # 3. Update Version
           sed -i 's/versionCode .*/versionCode 201/' fermata/build.gradle
           sed -i 's/versionName .*/versionName "2.0.1"/' fermata/build.gradle
 
-      - name: Strip Automotive and Conflicting Services
+      - name: Discard Automotive & Resolve Conflicts (Keep YouTube/Browser)
         run: |
-          # Remove the hardware feature for Automotive OS
+          # A. Remove Automotive hardware features (fixes Error 1)
           find . -name "AndroidManifest.xml" -exec sed -i '/android.hardware.type.automotive/d' {} +
-          
-          # Remove Automotive metadata
           find . -name "AndroidManifest.xml" -exec sed -i '/com.android.automotive/d' {} +
           
-          # IMPORTANT: Remove CarAppService to resolve conflict with MediaBrowserService.
-          # Play Store allows MediaBrowserService (for music) OR CarAppService (for mirroring/POI), but NOT both.
-          # Since Fermata is a Media Player, we keep MediaBrowserService and delete CarAppService.
-          find . -name "AndroidManifest.xml" -exec sed -i '/CarAppService/,/<\/service>/d' {} +
+          # B. KEEP CarAppService (This is what runs YouTube and Browser)
+          # C. REMOVE MediaBrowserService declaration (fixes Error 2)
+          # This tells Google "I am not a music player", which allows the YouTube engine to exist.
+          find . -name "AndroidManifest.xml" -exec sed -i '/android.media.browse.MediaBrowserService/d' {} +
+          
+          # D. Remove the "Music" category metadata that triggers the conflict
+          find . -name "AndroidManifest.xml" -exec sed -i '/com.google.android.gms.car.application.audio/d' {} +
 
       - name: Generate Signing Key (Keystore)
         run: |
@@ -61,7 +62,8 @@ jobs:
       - name: Build Android Auto Bundle (AAB)
         run: ./gradlew :fermata:bundleAutoRelease --no-daemon
         env:
-          NO_GS: true
+          # This is critical for Fermata to include the custom YouTube/Browser components
+          NO_GS: true 
           _JAVA_OPTIONS: "-Xmx4096m"
 
       - name: Clean and Sign AAB
@@ -78,7 +80,7 @@ jobs:
           name: fermata-signed-aab
           path: fermata/build/outputs/bundle/autoRelease/*.aab
 
-      - name: Upload the Keystore
+      - name: Upload the Keystore (SAVE THIS)
         uses: actions/upload-artifact@v4
         with:
           name: my-signing-key
